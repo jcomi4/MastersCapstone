@@ -1,25 +1,39 @@
-from google import genai
-import json
+import google.generativeai as genai
+import google.api_core.exceptions
+import time
 
-GEMINI_API_KEY = "AIzaSyC9X5jn7wCNd1V57Iwx5qFUcpYi1nNVYXY"
-client = genai.Client(api_key=GEMINI_API_KEY)
+# --- AI CONFIG ---
+GOOGLE_API_KEY = "AIzaSyAhr0BifuvGfiVyZNf859nH1JPthpmBE_k"
+genai.configure(api_key=GOOGLE_API_KEY)
+# Using the stable model name
+model = genai.GenerativeModel('gemini-2.0-flash')
 
-def rank_my_tasks(task_list):
-    # These are the most stable string names for the 2026 API
-    # Note: 'gemini-1.5-flash' often needs the '-latest' or version suffix
-    models_to_try = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-2.0-flash"]
+def rank_my_tasks(content, prefs):
+    busy_list = "\n".join([f"- {b['day']}: {b['start']} to {b['end']} ({b['title']})" for b in prefs['busy_blocks']])
     
-    for model_name in models_to_try:
+    prompt = f"""
+    You are an Academic Project Manager for a Master's student. 
+    TASK CONTENT: {content}
+    
+    FIXED BUSY TIMES (DO NOT SCHEDULE STUDY DURING THESE):
+    {busy_list}
+    
+    CONSTRAINTS:
+    - Max study time per day: {prefs['max_hours_daily']} hours.
+    - Format the schedule in a clean markdown table.
+    - Use 12-hour AM/PM time for all suggestions.
+    - Reference specific course modules from the data.
+    """
+
+    # Retry logic for Quota/API errors
+    for attempt in range(3):
         try:
-            print(f"🤖 Attempting to use {model_name}...")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=f"Rank these student tasks (if there is only one, suggest how to tackle the assignment): {json.dumps(task_list)}"
-            )
+            response = model.generate_content(prompt)
             return response.text
+        except google.api_core.exceptions.ResourceExhausted:
+            if attempt < 2:
+                time.sleep(5) # Wait before retrying
+                continue
+            return "⚠️ API Quota hit. Please wait a minute and try again."
         except Exception as e:
-            # We print the error but keep trying the next model
-            print(f"⚠️ {model_name} failed. Moving to next...")
-            continue
-            
-    return "❌ All models currently locked. Your Google Billing verification is likely still processing."
+            return f"❌ AI Error: {str(e)}"

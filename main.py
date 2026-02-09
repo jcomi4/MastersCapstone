@@ -1,58 +1,49 @@
 from canvasapi import Canvas
-from brain import rank_my_tasks
+import re
 
 # --- CONFIGURATION ---
 CANVAS_URL = "https://canvas.instructure.com"
-CANVAS_TOKEN = "7~HK8X7rz4KWuE42m6aEW8fZeVzBuAhu49wBfU9va6RfhE2C2RzKmTA2BAhZ6VWwEV "
+CANVAS_TOKEN = "7~nuQaPTk3yKJDurHVhEv6XQ9xKeZcTRZzeKCf3XRmhEKJQryBXmxtMHZBrZGz6At9"
 
-# Initialize Canvas connection
 canvas = Canvas(CANVAS_URL, CANVAS_TOKEN)
 
-def run_planner():
-    try:
-        # 1. Get your course (grabs the first one in your list)
-        courses = canvas.get_courses()
-        course = courses[0]
-        print(f"📡 Connected to Canvas Course: {course.name}")
+def clean_html(raw_html):
+    """Removes HTML tags from Canvas descriptions."""
+    if not raw_html: return ""
+    cleanr = re.compile('<.*?>')
+    return re.sub(cleanr, '', raw_html)
 
-        # 2. Gather Assignments and Quizzes
-        to_do_data = []
+def get_canvas_data():
+    """Fetches assignments and module items to return to the app."""
+    try:
+        courses = canvas.get_courses()
+        course = courses[0] # Grabs your History of Rome course
         
-        # Pull Assignments
-        for a in course.get_assignments():
-            to_do_data.append({
-                "type": "Assignment",
+        all_content = []
+
+        # Pull Module Items
+        modules = course.get_modules()
+        for m in modules:
+            items = m.get_module_items()
+            for item in items:
+                all_content.append({
+                    "type": "Module Item",
+                    "title": item.title,
+                    "module": m.name
+                })
+
+        # Pull Detailed Assignments
+        assignments = course.get_assignments()
+        for a in assignments:
+            all_content.append({
+                "type": "Task",
                 "name": a.name,
                 "due": str(a.due_at) if a.due_at else "No Due Date",
-                "points": getattr(a, 'points_possible', 0)
-            })
-            
-        # Pull Quizzes
-        for q in course.get_quizzes():
-            to_do_data.append({
-                "type": "Quiz",
-                "name": q.title,
-                "due": str(q.due_at) if q.due_at else "No Due Date",
-                "points": getattr(q, 'points_possible', 0)
+                "instructions": clean_html(a.description)[:1500]
             })
 
-        # 3. SAFETY CHECK: Is the list empty?
-        if not to_do_data:
-            print("⚠️ No data found! Please add an assignment to your Canvas Sandbox first.")
-            return
-
-        print(f"🔍 Found {len(to_do_data)} items. Sending to AI...")
-        
-        # 4. Send to the AI Brain
-        priority_list = rank_my_tasks(to_do_data)
-        
-        print("\n" + "="*40)
-        print("🎓 YOUR AI-POWERED STUDY PLAN")
-        print("="*40)
-        print(priority_list)
+        return all_content #
 
     except Exception as e:
-        print(f"❌ Error in main.py: {e}")
-
-if __name__ == "__main__":
-    run_planner()
+        print(f"❌ Canvas Error: {e}")
+        return []
